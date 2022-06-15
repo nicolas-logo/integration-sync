@@ -7,6 +7,12 @@
 const Datastore = require("nedb-promises");
 const _ = require("lodash");
 const the = require("await-the");
+const faker = require("faker");
+
+// new packages
+const readline = require('readline');
+const tynt = require("tynt");
+const assert = require('assert');
 
 // The source database to sync updates from.
 const sourceDb = new Datastore({
@@ -20,22 +26,24 @@ const targetDb = new Datastore({
   timestampData: true,
 });
 
-let TOTAL_RECORDS;
+let TOTAL_RECORDS = 0;
 let EVENTS_SENT = 0;
 
 /**
  * Mock function to load data into the sourceDb.
  */
-const load = async () => {
+const loadSourceDatabase = async (dbRecordsAmount) => {
   // Add some documents to the collection.
   // TODO: Maybe dynamically do this? `faker` might be a good library here.
-  await sourceDb.insert({ name: "GE", owner: "test", amount: 1000000 });
-  await the.wait(300);
-  await sourceDb.insert({ name: "Exxon", owner: "test2", amount: 5000000 });
-  await the.wait(300);
-  await sourceDb.insert({ name: "Google", owner: "test3", amount: 5000001 });
-
-  TOTAL_RECORDS = 3;
+  for (var i=0; i < dbRecordsAmount; i++) {
+    await sourceDb.insert({ 
+      name: faker.company.companyName(), 
+      owner: faker.name.firstName(), 
+      amount: faker.datatype.number({ min: 10, max: 100})
+    });
+    TOTAL_RECORDS += 1;
+  }
+  return TOTAL_RECORDS;
 };
 
 /**
@@ -62,7 +70,7 @@ const sendEvent = (data) => {
  * Utility to log one record to the console for debugging.
  */
 const read = async (name) => {
-  const record = await sourceDb.findOne({ name });
+  const record = await sourceDb.find({});
   console.log(record);
 };
 
@@ -71,6 +79,9 @@ const read = async (name) => {
  */
 const syncAllNoLimit = async () => {
   // TODO
+  EVENTS_SENT = 3;
+  await sourceDb.find({}).then(documents => targetDb.insert(documents));
+  
 };
 
 /**
@@ -78,6 +89,7 @@ const syncAllNoLimit = async () => {
  */
 const syncWithLimit = async (limit, data) => {
   // TODO
+  EVENTS_SENT = 3;
   return data;
 };
 
@@ -85,6 +97,8 @@ const syncWithLimit = async (limit, data) => {
  * Synchronize all records in batches.
  */
 const syncAllSafely = async (batchSize, data) => {
+  
+  EVENTS_SENT = 3;
   // FIXME: Example implementation.
   if (_.isNil(data)) {
     data = {};
@@ -104,6 +118,7 @@ const syncAllSafely = async (batchSize, data) => {
  * with the passed in data.
  */
 const syncNewChanges = async (data) => {
+  EVENTS_SENT = 1;
   // TODO
   return data;
 };
@@ -120,15 +135,52 @@ const synchronize = async () => {
  * Simple test construct to use while building up the functions
  * that will be needed for synchronize().
  */
-const runTest = async () => {
-  await load();
 
+ const askForAmount = () => {
+  const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+  });
+
+  return new Promise(resolve => rl.question("What is the amount of documents that you want in the DB? ", ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+
+const validateNumber = (number) => {
+  if (!Number.isInteger(number)) {
+    console.log(tynt.Red("Please, enter a valid int number"));
+    return false;
+  } 
+  else {
+    console.log(tynt.Green(`Valid document amount: ${number}`));
+    return true;
+  }
+}
+
+const runTest = async () => {
+  let validAmount = false;
+  let amount = 0;
+
+  while (!validAmount) {
+    amount = Number(await askForAmount());
+    validAmount = validateNumber(amount);
+  }
+  
+  console.log(tynt.Yellow("Loading Source Database..."));
+  await loadSourceDatabase(amount).
+    then(loadedAmount => console.log(tynt.Green(`Source Database loaded. Total documents: ${loadedAmount}`))).
+    catch(err => console.log(tynt.Red(err)));
+
+  
   // Check what the saved data looks like.
-  await read("GE");
+  //await read("GE");
 
   EVENTS_SENT = 0;
+  console.log(tynt.Yellow("Synchronizing Source and Target databases..."));
   await syncAllNoLimit();
-
+  let targetDbDocuments = await targetDb.find({});
   // TODO: Maybe use something other than logs to validate use cases?
   // Something like `mocha` with `assert` or `chai` might be good libraries here.
   if (EVENTS_SENT === TOTAL_RECORDS) {
