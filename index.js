@@ -79,9 +79,21 @@ const read = async (name) => {
  */
 const syncAllNoLimit = async () => {
   // TODO
-  EVENTS_SENT = 3;
+  console.log(tynt.Yellow("Synchronizing Source and Target databases..."));
+
+  await targetDb.remove({},{multi: true});
   await sourceDb.find({}).then(documents => targetDb.insert(documents));
-  
+
+  let sourceDbDocuments = await sourceDb.count({});
+  let targetDbDocuments = await targetDb.count({});
+  // TODO: Maybe use something other than logs to validate use cases?
+  // Something like `mocha` with `assert` or `chai` might be good libraries here.
+  if (sourceDbDocuments === targetDbDocuments) {
+    console.log(tynt.Green("Source and Target databases were synchronized successfully."));
+  }
+  else {
+    console.log(tynt.Green("There was an error synchronizing Source and Target databases."));
+  }
 };
 
 /**
@@ -136,6 +148,25 @@ const synchronize = async () => {
  * that will be needed for synchronize().
  */
 
+ const askForOption = () => {
+  const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+  });
+
+  return new Promise(resolve => rl.question("Please, select an option: \n" +
+                                              " 1. Load data to the Source Database. \n" +
+                                              " 2. Show Target Database (testing only). \n" +
+                                              " 3. syncAllNoLimit(). \n" +
+                                              " 4. syncAllSafely(). \n" +
+                                              " 5. syncNewChanges(). \n" +
+                                              " 6. synchronize(). \n" +
+                                              " 0. Exit. \n", ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+
  const askForAmount = () => {
   const rl = readline.createInterface({
       input: process.stdin,
@@ -159,7 +190,7 @@ const validateNumber = (number) => {
   }
 }
 
-const runTest = async () => {
+const loadData = async () => {
   let validAmount = false;
   let amount = 0;
 
@@ -173,18 +204,70 @@ const runTest = async () => {
     then(loadedAmount => console.log(tynt.Green(`Source Database loaded. Total documents: ${loadedAmount}`))).
     catch(err => console.log(tynt.Red(err)));
 
+  console.table(await sourceDb.find({}));
+}
+
+const showTargetDatabase = async () => {
+  console.log(tynt.Green("Target Database:"));
+  console.table(await targetDb.find({}));
+}
+
+const runProgram = async () => {
+  let validOpt = true;
+  let opt = 0;
   
+  while (validOpt) {
+    opt = Number(await askForOption());
+    switch (opt) {
+      case 1: 
+        validOpt = true;
+        await loadData();
+        break;
+      case 2: 
+        validOpt = true;
+        await showTargetDatabase();
+        break;
+      case 3: 
+        validOpt = true;
+        await syncAllNoLimit();
+        break;
+      case 4: 
+        validOpt = true;
+        syncAllSafely();
+        break;
+      case 5: 
+        validOpt = true;
+        syncNewChanges();
+        break;
+      case 6: 
+        validOpt = true;
+        synchronize();
+        break;
+        case 0: 
+        validOpt = false;
+        break;
+      default: 
+        validOpt = false;
+        break;
+    };
+  }  
   // Check what the saved data looks like.
   //await read("GE");
 
-  EVENTS_SENT = 0;
+  /* EVENTS_SENT = 0;
   console.log(tynt.Yellow("Synchronizing Source and Target databases..."));
   await syncAllNoLimit();
-  let targetDbDocuments = await targetDb.find({});
+  
+  let sourceDbDocuments = await sourceDb.count({});
+  let targetDbDocuments = await targetDb.count({});
   // TODO: Maybe use something other than logs to validate use cases?
   // Something like `mocha` with `assert` or `chai` might be good libraries here.
-  if (EVENTS_SENT === TOTAL_RECORDS) {
-    console.log("1. synchronized correct number of events");
+  if (sourceDbDocuments === targetDbDocuments) {
+    console.log(tynt.Green("Source and Target databases were synchronized successfully."));
+    console.table(await sourceDb.find({}))
+  }
+  else {
+    console.log(tynt.Green("There was an error synchronizing Source and Target databases."));
   }
 
   EVENTS_SENT = 0;
@@ -202,11 +285,11 @@ const runTest = async () => {
 
   if (EVENTS_SENT === 1) {
     console.log("3. synchronized correct number of events");
-  }
+  } */
 };
 
 // TODO:
 // Call synchronize() instead of runTest() when you have synchronize working
 // or add it to runTest().
-runTest();
+runProgram();
 // synchronize();
