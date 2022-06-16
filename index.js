@@ -8,6 +8,7 @@ const Datastore = require("nedb-promises");
 const _ = require("lodash");
 const the = require("await-the");
 const faker = require("faker");
+let assert = require('assert');
 
 // new packages
 const readline = require('readline');
@@ -311,3 +312,6 @@ const runProgram = async () => {
 
 
 runProgram();
+
+module.exports.validateNumber = (n) => {return validateNumber(n)};
+module.exports.loadSourceDatabase = async (n) => {return await loadSourceDatabase(n)};
