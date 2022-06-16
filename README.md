@@ -42,5 +42,3 @@ You will need to reference the following API documentation:
 * Recommended: https://lodash.com/docs/4.17.15
 * Recommended: https://www.npmjs.com/package/await-the#api-reference
 
-# run
-node index.js
