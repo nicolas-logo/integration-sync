@@ -26,7 +26,7 @@ const targetDb = new Datastore({
 });
 
 let TOTAL_RECORDS = 0;
-let EVENTS_SENT = 0;
+let lastSync = new Date();
 
 /**
  * Mock function to load data into the sourceDb.
@@ -49,9 +49,7 @@ const loadSourceDatabase = async (dbRecordsAmount) => {
  * Mock function to find and update an existing document in the
  * sourceDb.
  */
-const touch = async (name) => {
-  await sourceDb.update({ name }, { $set: { owner: "test4" } });
-};
+
 
 /**
  * API to send each document to in order to sync.
@@ -82,7 +80,7 @@ const syncAllNoLimit = async () => {
 
   await targetDb.remove({},{multi: true});
   await sourceDb.find({}).then(documents => targetDb.insert(documents));
-
+  lastSync = new Date();
   console.log(tynt.Green("Source and Target databases were synchronized successfully."));
 
   // TODO: Maybe use something other than logs to validate use cases?
@@ -118,6 +116,7 @@ const syncAllSafely = async () => {
     let docs = await sourceDb.find({}).skip(skip).limit(batchSize);
     if(docs.length === 0) {
       keepInserting = false;
+      lastSync = new Date();
       console.log(tynt.Green("Source and Target databases were synchronized successfully."));
       
     }
@@ -149,24 +148,29 @@ const syncAllSafely = async () => {
  * with the passed in data.
  */
 const syncNewChanges = async () => {
-  let now = new Date().toISOString();
-
-  let updatedDocs = await sourceDb.find({updatedAt: {$gt: now}});
-  let newDocs = await sourceDb.find({createdAt: {$gt: now}});
+  let updatedDocs = await sourceDb.find({
+                                        $and:[
+                                          {updatedAt: {$gt: lastSync}},
+                                          {createdAt: {$lt: lastSync}},
+                                        ]
+                                      });
+  let newDocs = await sourceDb.find({createdAt: {$gt: lastSync}});
 
   if (newDocs.length > 0) {
     await targetDb.insert(newDocs);
   }
 
   updatedDocs.forEach(doc => {
-    db.update({ _id: doc._id }, { $set: { 
+    targetDb.update({ _id: doc._id }, { $set: { 
                                   name: doc.name,
                                   owner: doc.owner,
                                   amount: doc.amount,
-                                  updatedAt: now
+                                  updatedAt: new Date()
                                 } 
     });
   })
+
+  lastSync = new Date();
 
 };
 
@@ -191,11 +195,12 @@ const synchronize = async () => {
 
   return new Promise(resolve => rl.question("Please, select an option: \n" +
                                               " 1. Load data to the Source Database. \n" +
-                                              " 2. Show Target Database (testing only). \n" +
-                                              " 3. syncAllNoLimit(). \n" +
-                                              " 4. syncAllSafely(). \n" +
-                                              " 5. syncNewChanges(). \n" +
-                                              " 6. synchronize(). \n" +
+                                              " 2. Show Target Database (for testing only). \n" +
+                                              " 3. Update a document with random data (for testing only). \n" +
+                                              " 4. syncAllNoLimit(). \n" +
+                                              " 5. syncAllSafely(). \n" +
+                                              " 6. syncNewChanges(). \n" +
+                                              " 7. synchronize(). \n" +
                                               " 0. Exit. \n", ans => {
       rl.close();
       resolve(ans);
@@ -221,6 +226,18 @@ const askBatchSize = () => {
   });
 
   return new Promise(resolve => rl.question("What is the batch size? ", ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+
+const askDocId = () => {
+  const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+  });
+
+  return new Promise(resolve => rl.question("Enter an Id: ", ans => {
       rl.close();
       resolve(ans);
   }))
@@ -259,6 +276,18 @@ const showTargetDatabase = async () => {
   console.table(await targetDb.find({}));
 }
 
+const updateDocument = async () => {
+    let id = await askDocId();
+    const doc = await sourceDb.update({ _id: id }, { $set: { owner: faker.name.firstName() } }, {returnUpdatedDocs: true});
+    if(doc) {
+      console.table(doc);
+      console.log(tynt.Green(`Document '${id}' updated successfully`));
+    }
+    else {
+      console.log(tynt.Red(`Document '${id}' does not exist`));
+    }
+}
+
 const runProgram = async () => {
   let validOpt = true;
   let opt = 0;
@@ -273,15 +302,18 @@ const runProgram = async () => {
         await showTargetDatabase();
         break;
       case 3: 
-        await syncAllNoLimit();
+        await updateDocument();
         break;
       case 4: 
-        await syncAllSafely();
+        await syncAllNoLimit();
         break;
       case 5: 
-        await syncNewChanges();
+        await syncAllSafely();
         break;
       case 6: 
+        await syncNewChanges();
+        break;
+      case 7: 
         await synchronize();
         break;
         case 0: 
