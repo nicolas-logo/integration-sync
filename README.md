@@ -2,6 +2,8 @@
 npm install
 
 ### Run
+normal: node index.js
+test: npm run test 
 
 ### Coding Challenge Guidelines
 
