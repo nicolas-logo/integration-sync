@@ -12,7 +12,6 @@ const faker = require("faker");
 // new packages
 const readline = require('readline');
 const tynt = require("tynt");
-const assert = require('assert');
 
 // The source database to sync updates from.
 const sourceDb = new Datastore({
@@ -84,16 +83,10 @@ const syncAllNoLimit = async () => {
   await targetDb.remove({},{multi: true});
   await sourceDb.find({}).then(documents => targetDb.insert(documents));
 
-  let sourceDbDocuments = await sourceDb.count({});
-  let targetDbDocuments = await targetDb.count({});
+  console.log(tynt.Green("Source and Target databases were synchronized successfully."));
+
   // TODO: Maybe use something other than logs to validate use cases?
   // Something like `mocha` with `assert` or `chai` might be good libraries here.
-  if (sourceDbDocuments === targetDbDocuments) {
-    console.log(tynt.Green("Source and Target databases were synchronized successfully."));
-  }
-  else {
-    console.log(tynt.Green("There was an error synchronizing Source and Target databases."));
-  }
 };
 
 /**
@@ -108,9 +101,35 @@ const syncWithLimit = async (limit, data) => {
 /**
  * Synchronize all records in batches.
  */
-const syncAllSafely = async (batchSize, data) => {
+const syncAllSafely = async () => {
+  let validAmount = false;
+  let batchSize = 0;
+
+  while (!validAmount) {
+    batchSize = Number(await askBatchSize());
+    validAmount = validateNumber(batchSize);
+  }
+  let skip = 0;
+  let keepInserting = true;
+  await targetDb.remove({},{multi: true});
+  console.log(tynt.Yellow("Batching docs to the Target Database..."));
+
+  while (keepInserting) {
+    let docs = await sourceDb.find({}).skip(skip).limit(batchSize);
+    if(docs.length === 0) {
+      keepInserting = false;
+      console.log(tynt.Green("Source and Target databases were synchronized successfully."));
+      
+    }
+    else {
+      skip += batchSize;
+      await targetDb.insert(docs);
+    }
+  }
   
-  EVENTS_SENT = 3;
+
+
+/*   EVENTS_SENT = 3;
   // FIXME: Example implementation.
   if (_.isNil(data)) {
     data = {};
@@ -122,17 +141,33 @@ const syncAllSafely = async (batchSize, data) => {
     async () => await syncWithLimit(batchSize, data)
   );
 
-  return data;
+  return data; */
 };
 
 /**
  * Sync changes since the last time the function was called with
  * with the passed in data.
  */
-const syncNewChanges = async (data) => {
-  EVENTS_SENT = 1;
-  // TODO
-  return data;
+const syncNewChanges = async () => {
+  let now = new Date().toISOString();
+
+  let updatedDocs = await sourceDb.find({updatedAt: {$gt: now}});
+  let newDocs = await sourceDb.find({createdAt: {$gt: now}});
+
+  if (newDocs.length > 0) {
+    await targetDb.insert(newDocs);
+  }
+
+  updatedDocs.forEach(doc => {
+    db.update({ _id: doc._id }, { $set: { 
+                                  name: doc.name,
+                                  owner: doc.owner,
+                                  amount: doc.amount,
+                                  updatedAt: now
+                                } 
+    });
+  })
+
 };
 
 /**
@@ -179,13 +214,25 @@ const synchronize = async () => {
   }))
 }
 
+const askBatchSize = () => {
+  const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+  });
+
+  return new Promise(resolve => rl.question("What is the batch size? ", ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+
 const validateNumber = (number) => {
   if (!Number.isInteger(number)) {
     console.log(tynt.Red("Please, enter a valid int number"));
     return false;
   } 
   else {
-    console.log(tynt.Green(`Valid document amount: ${number}`));
+    console.log(tynt.Green(`Valid number: ${number}`));
     return true;
   }
 }
@@ -220,34 +267,27 @@ const runProgram = async () => {
     opt = Number(await askForOption());
     switch (opt) {
       case 1: 
-        validOpt = true;
         await loadData();
         break;
       case 2: 
-        validOpt = true;
         await showTargetDatabase();
         break;
       case 3: 
-        validOpt = true;
         await syncAllNoLimit();
         break;
       case 4: 
-        validOpt = true;
-        syncAllSafely();
+        await syncAllSafely();
         break;
       case 5: 
-        validOpt = true;
-        syncNewChanges();
+        await syncNewChanges();
         break;
       case 6: 
-        validOpt = true;
-        synchronize();
+        await synchronize();
         break;
         case 0: 
         validOpt = false;
         break;
       default: 
-        validOpt = false;
         break;
     };
   }  
