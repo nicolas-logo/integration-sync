@@ -1,3 +1,8 @@
+### Installment
+npm install
+
+### Run
+
 ### Coding Challenge Guidelines
 
 This exercise has you implement a synchronize() method that will copy all records from the sourceDb into the targetDb() then start polling for changes. Places where you need to add code have been
