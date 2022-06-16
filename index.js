@@ -26,14 +26,90 @@ const targetDb = new Datastore({
 });
 
 let TOTAL_RECORDS = 0;
+
+//used to save the last time the 2 databases were synchronized
 let lastSync = new Date();
 
+// used to save if the user wants to mantain both databases being synch automatically
+let synchronizing = false;
+
+
+// function that builds the menu
+ const askForOption = () => {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  return new Promise(resolve => rl.question("Please, select an option: \n" +
+                                              " 1. Load data to the Source Database. \n" +
+                                              " 2. Show Target Database (for testing only). \n" +
+                                              " 3. Update a document with random data (for testing only). \n" +
+                                              " 4. syncAllNoLimit(). \n" +
+                                              " 5. syncAllSafely(). \n" +
+                                              " 6. syncNewChanges(). \n" +
+                                              " 7. Start/Stop synchronize(). \n" +
+                                              " 0. Exit. \n", ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+
+/* 
+  * function used for asking the user for a number/id
+    *used in option 1 (asking for and validating the number of new docs to add in the current Source Database)
+    *used in option 3 (asking for the id of the document to be updated, I know)
+    *used in option 5 (asking for the batch size)
+    *used in option 7 (asking for the interval of time that will be used between updates)
+ */ 
+const askForNumber = (question) => {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  return new Promise(resolve => rl.question(question, ans => {
+      rl.close();
+      resolve(ans);
+  }))
+}
+ 
+/* 
+  * function that validates if the parameter is a number
+  * preventing strings and decimal numbers 
+*/
+const validateNumber = (number) => {
+  if (!Number.isInteger(number)) {
+    console.log(tynt.Red("Please, enter a valid int number"));
+    return false;
+  } 
+  else {
+    console.log(tynt.Green(`Valid number: ${number}`));
+    return true;
+  }
+}
+
+/* 
+  ** Option 1 **
+    * Aks for the number of records to be added in the Source Database and validate the number
+    * I used then() here to have the amount retrieved by loadSourceDatabase()
+*/
+const loadData = async () => {
+  let validAmount = false;
+  let amount = 0;
+
+  while (!validAmount) {
+    amount = Number(await askForNumber("What is the amount of documents that you want in the DB? "));
+    validAmount = validateNumber(amount);
+  }
+  
+  console.log(tynt.Yellow("Loading Source Database..."));
+  await loadSourceDatabase(amount).
+    then(loadedAmount => console.log(tynt.Green(`Source Database loaded. Total documents: ${loadedAmount}`))).
+    catch(err => console.log(tynt.Red(err)));
+
+  console.table(await sourceDb.find({}));
+}
+
 /**
- * Mock function to load data into the sourceDb.
+ * function used to add records to the Source Database Once the amount is valid
  */
-const loadSourceDatabase = async (dbRecordsAmount) => {
+ const loadSourceDatabase = async (dbRecordsAmount) => {
   // Add some documents to the collection.
-  // TODO: Maybe dynamically do this? `faker` might be a good library here.
   for (var i=0; i < dbRecordsAmount; i++) {
     await sourceDb.insert({ 
       name: faker.company.companyName(), 
@@ -45,36 +121,41 @@ const loadSourceDatabase = async (dbRecordsAmount) => {
   return TOTAL_RECORDS;
 };
 
-/**
- * Mock function to find and update an existing document in the
- * sourceDb.
- */
+/* 
+  ** Option 2 ** 
+    * Just showing what is on the Target Database
+    * Useful for testing the app anytime
+*/
+const showTargetDatabase = async () => {
+  console.log(tynt.Green("Target Database:"));
+  console.table(await targetDb.find({}));
+}
 
+/* 
+  ** Option 3 ** 
+    * Function that tries to update the doc with the provided Id
+    * and setting a new fake Owner's name in order to have that record updated
+    * property 'returnUpdatedDocs' is setted 'true' to have the doc in case it exist 
+    * in order to show it in the console
+*/
+const updateDocument = async () => {
+    let id = await askForNumber("Enter an Id: ");
+    const doc = await sourceDb.update({ _id: id }, { $set: { owner: faker.name.firstName() } }, {returnUpdatedDocs: true});
+    if(doc) {
+      console.table(doc);
+      console.log(tynt.Green(`Document '${id}' updated successfully`));
+    }
+    else {
+      console.log(tynt.Red(`Document '${id}' does not exist`));
+    }
+}
 
-/**
- * API to send each document to in order to sync.
- */
-const sendEvent = (data) => {
-  EVENTS_SENT += 1;
-  console.log("event being sent: ");
-  console.log(data);
-
-  // TODO: Write data to targetDb
-  // await targetDb.insert(data);
-};
-
-/**
- * Utility to log one record to the console for debugging.
- */
-const read = async (name) => {
-  const record = await sourceDb.find({});
-  console.log(record);
-};
-
-/**
- * Get all records out of the database and send them to the targetDb.
- */
-const syncAllNoLimit = async () => {
+/* 
+  ** Option 4 ** 
+  * function that removes all the docs of the Target Database
+  * and then just inserts all the docs found in the Source Database
+*/
+ const syncAllNoLimit = async () => {
   // TODO
   console.log(tynt.Yellow("Synchronizing Source and Target databases..."));
 
@@ -82,29 +163,20 @@ const syncAllNoLimit = async () => {
   await sourceDb.find({}).then(documents => targetDb.insert(documents));
   lastSync = new Date();
   console.log(tynt.Green("Source and Target databases were synchronized successfully."));
-
-  // TODO: Maybe use something other than logs to validate use cases?
-  // Something like `mocha` with `assert` or `chai` might be good libraries here.
 };
 
-/**
- * Sync up to the provided limit of records.
- */
-const syncWithLimit = async (limit, data) => {
-  // TODO
-  EVENTS_SENT = 3;
-  return data;
-};
-
-/**
- * Synchronize all records in batches.
- */
+/* 
+  ** Option 5 ** 
+    * Function that asks for the batch size and validate it
+    * then will clean the Target Database and start to keep inserting
+    * new docs according to the batch size and skipping the records already inserted
+*/
 const syncAllSafely = async () => {
   let validAmount = false;
   let batchSize = 0;
 
   while (!validAmount) {
-    batchSize = Number(await askBatchSize());
+    batchSize = Number(await askForNumber("What is the batch size? "));
     validAmount = validateNumber(batchSize);
   }
   let skip = 0;
@@ -125,28 +197,17 @@ const syncAllSafely = async () => {
       await targetDb.insert(docs);
     }
   }
-  
-
-
-/*   EVENTS_SENT = 3;
-  // FIXME: Example implementation.
-  if (_.isNil(data)) {
-    data = {};
-  }
-
-  data.lastResultSize = -1;
-  await the.while(
-    () => data.lastResultSize != 0,
-    async () => await syncWithLimit(batchSize, data)
-  );
-
-  return data; */
 };
 
-/**
- * Sync changes since the last time the function was called with
- * with the passed in data.
- */
+/* 
+  ** Option 6 ** 
+  * Function that looks for the updated and new docs in the Source Database
+    * updated docs: docs that the updated date is greater than the last sync date
+    *               and created before that
+    * new docs: docs created after the last sync
+  * New docs are inserted in the target database as an array and
+  * Updated docs will be updated by id
+*/
 const syncNewChanges = async () => {
   let updatedDocs = await sourceDb.find({
                                         $and:[
@@ -171,121 +232,44 @@ const syncNewChanges = async () => {
   })
 
   lastSync = new Date();
+  console.log(tynt.Green(`Target Database updated successfully`));
 
 };
 
-/**
- * Implement function to fully sync of the database and then
- * keep polling for changes.
- */
+/* 
+  ** Option 7 ** 
+  * Function that will start/stop the synchronization task
+  * When starting, first runs syncAllNoLimit() to set a fresh sync
+  * Then will ask the user for the interval of time for the sync
+  * and run startSync() with that number
+*/
 const synchronize = async () => {
-  // TODO
+  let validNumber = false;
+  let number = 0;
+  synchronizing = !synchronizing;
+
+  if (synchronizing) {
+    await syncAllNoLimit();
+
+    while (!validNumber) {
+      number = Number(await askForNumber("Enter update intervals (in secs) "));
+      validNumber = validateNumber(number);
+    }
+    console.log(tynt.Green(`Synchronization running...`));
+    startSync(number);
+  }
+  else {
+    console.log(tynt.Yellow(`Synchronization stopped.`));
+    
+  }
 };
 
-/**
- * Simple test construct to use while building up the functions
- * that will be needed for synchronize().
- */
-
- const askForOption = () => {
-  const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-  });
-
-  return new Promise(resolve => rl.question("Please, select an option: \n" +
-                                              " 1. Load data to the Source Database. \n" +
-                                              " 2. Show Target Database (for testing only). \n" +
-                                              " 3. Update a document with random data (for testing only). \n" +
-                                              " 4. syncAllNoLimit(). \n" +
-                                              " 5. syncAllSafely(). \n" +
-                                              " 6. syncNewChanges(). \n" +
-                                              " 7. synchronize(). \n" +
-                                              " 0. Exit. \n", ans => {
-      rl.close();
-      resolve(ans);
-  }))
-}
-
- const askForAmount = () => {
-  const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-  });
-
-  return new Promise(resolve => rl.question("What is the amount of documents that you want in the DB? ", ans => {
-      rl.close();
-      resolve(ans);
-  }))
-}
-
-const askBatchSize = () => {
-  const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-  });
-
-  return new Promise(resolve => rl.question("What is the batch size? ", ans => {
-      rl.close();
-      resolve(ans);
-  }))
-}
-
-const askDocId = () => {
-  const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-  });
-
-  return new Promise(resolve => rl.question("Enter an Id: ", ans => {
-      rl.close();
-      resolve(ans);
-  }))
-}
-
-const validateNumber = (number) => {
-  if (!Number.isInteger(number)) {
-    console.log(tynt.Red("Please, enter a valid int number"));
-    return false;
-  } 
-  else {
-    console.log(tynt.Green(`Valid number: ${number}`));
-    return true;
+//function that calls syncNewChanges() until the user stop the sync
+const startSync = async (interval) => {
+  while (synchronizing) {
+    await syncNewChanges();
+    await the.wait(interval * 1000);
   }
-}
-
-const loadData = async () => {
-  let validAmount = false;
-  let amount = 0;
-
-  while (!validAmount) {
-    amount = Number(await askForAmount());
-    validAmount = validateNumber(amount);
-  }
-  
-  console.log(tynt.Yellow("Loading Source Database..."));
-  await loadSourceDatabase(amount).
-    then(loadedAmount => console.log(tynt.Green(`Source Database loaded. Total documents: ${loadedAmount}`))).
-    catch(err => console.log(tynt.Red(err)));
-
-  console.table(await sourceDb.find({}));
-}
-
-const showTargetDatabase = async () => {
-  console.log(tynt.Green("Target Database:"));
-  console.table(await targetDb.find({}));
-}
-
-const updateDocument = async () => {
-    let id = await askDocId();
-    const doc = await sourceDb.update({ _id: id }, { $set: { owner: faker.name.firstName() } }, {returnUpdatedDocs: true});
-    if(doc) {
-      console.table(doc);
-      console.log(tynt.Green(`Document '${id}' updated successfully`));
-    }
-    else {
-      console.log(tynt.Red(`Document '${id}' does not exist`));
-    }
 }
 
 const runProgram = async () => {
@@ -323,45 +307,7 @@ const runProgram = async () => {
         break;
     };
   }  
-  // Check what the saved data looks like.
-  //await read("GE");
-
-  /* EVENTS_SENT = 0;
-  console.log(tynt.Yellow("Synchronizing Source and Target databases..."));
-  await syncAllNoLimit();
-  
-  let sourceDbDocuments = await sourceDb.count({});
-  let targetDbDocuments = await targetDb.count({});
-  // TODO: Maybe use something other than logs to validate use cases?
-  // Something like `mocha` with `assert` or `chai` might be good libraries here.
-  if (sourceDbDocuments === targetDbDocuments) {
-    console.log(tynt.Green("Source and Target databases were synchronized successfully."));
-    console.table(await sourceDb.find({}))
-  }
-  else {
-    console.log(tynt.Green("There was an error synchronizing Source and Target databases."));
-  }
-
-  EVENTS_SENT = 0;
-  const data = await syncAllSafely(2);
-
-  if (EVENTS_SENT === TOTAL_RECORDS) {
-    console.log("2. synchronized correct number of events");
-  }
-
-  // Make some updates and then sync just the changed files.
-  EVENTS_SENT = 0;
-  await the.wait(300);
-  await touch("GE");
-  await syncNewChanges(1, data);
-
-  if (EVENTS_SENT === 1) {
-    console.log("3. synchronized correct number of events");
-  } */
 };
 
-// TODO:
-// Call synchronize() instead of runTest() when you have synchronize working
-// or add it to runTest().
+
 runProgram();
-// synchronize();
