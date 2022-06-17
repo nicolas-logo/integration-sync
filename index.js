@@ -250,11 +250,14 @@ const synchronize = async () => {
   synchronizing = !synchronizing;
 
   if (synchronizing) {
-    await syncAllNoLimit();
-
     while (!validNumber) {
       number = Number(await askForNumber("Enter update intervals (in secs) "));
       validNumber = validateNumber(number);
+    }
+
+    if(await targetDb.count({}) === 0) {
+      await syncAllNoLimit();
+    
     }
     console.log(tynt.Green(`Synchronization running...`));
     startSync(number);
