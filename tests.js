@@ -1,5 +1,5 @@
 var assert = require('assert');
-const {validateNumber, loadSourceDatabase, targetDatabase } = require('./index');
+const {validateNumber, loadSourceDatabase } = require('./index');
 
 
 describe('#ValidateNumber()', function () {

@@ -261,7 +261,6 @@ const synchronize = async () => {
   }
   else {
     console.log(tynt.Yellow(`Synchronization stopped.`));
-    
   }
 };
 
