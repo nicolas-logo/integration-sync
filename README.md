@@ -19,8 +19,6 @@ Try to solve the following pieces for a production system. Note, doing one well 
 3. syncNewChanges(): Make sure updates in the source database are in our target database without syncing all data for all time. Think of a delta change solution using operators.
 4. synchronize(): Create polling for the sync. If haven't synced before, full sync all records from the source database. Otherwise, a cadence where we check the source database for updates to sync.
 
-### Evaluation Criteria
-
 #### Assumptions
 
 Assume that you only have read-only access to the sourceDb and write-only access to the targetDb. Of course, for tests, you can go outside these assumptions to properly test; however, for the general logic, assume this level of access.
